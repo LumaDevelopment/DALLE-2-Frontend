@@ -11,6 +11,8 @@
     <Title>DALLE·2 Frontend</Title>
     <Authors>Luma Development</Authors>
     <Company />
+    <RepositoryType>git</RepositoryType>
+    <RepositoryUrl>https://github.com/LumaDevelopment/DALLE-2-Frontend</RepositoryUrl>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Betalgo.OpenAI.GPT3" Version="6.6.7" />
