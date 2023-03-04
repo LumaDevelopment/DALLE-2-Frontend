@@ -1,6 +1,8 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Net;
+using System.Net.Http;
 using System.Windows.Forms;
 using OpenAI.GPT3;
 using OpenAI.GPT3.Managers;
@@ -18,8 +20,8 @@ namespace DALLE_2_Frontend
         private string _apiKey = "NO_API_KEY";
         private UserSettings _settings;
 
-        // Generated image URLs and position tracking
-        private string[] imageUrls;
+        // Generated image file paths and position tracking
+        private string[] imageFilePaths;
         private int currentImageIndex = 0;
 
         // Price per image for each resolution (256x256, 
@@ -139,14 +141,14 @@ namespace DALLE_2_Frontend
         {
 
             // If this was the last image of the set, reveal the next button again
-            if (currentImageIndex == (imageUrls.Length - 1))
+            if (currentImageIndex == (imageFilePaths.Length - 1))
             {
                 nextButton.Visible = true;
             }
 
             // Show previous image
             currentImageIndex--;
-            pictureBox.Load(imageUrls[currentImageIndex]);
+            pictureBox.Load(imageFilePaths[currentImageIndex]);
 
             // If we are now on the first image of the set, hide the previous button.
             if (currentImageIndex == 0)
@@ -172,10 +174,10 @@ namespace DALLE_2_Frontend
 
             // Show next image
             currentImageIndex++;
-            pictureBox.Load(imageUrls[currentImageIndex]);
+            pictureBox.Load(imageFilePaths[currentImageIndex]);
 
             // If we are now on the last image of the set, hide the next button.
-            if (currentImageIndex == (imageUrls.Length - 1))
+            if (currentImageIndex == (imageFilePaths.Length - 1))
             {
                 nextButton.Visible = false;
             }
@@ -202,14 +204,18 @@ namespace DALLE_2_Frontend
 
                 // If the user picked a file
 
+                // Open a FileStream from imageFilePaths
+                var inputStream = new FileStream(imageFilePaths[currentImageIndex], FileMode.Open);
+
                 // Open a FileStream to that location
-                var fs = (FileStream)saveFileDialog.OpenFile();
+                var outputStream = (FileStream) saveFileDialog.OpenFile();
 
                 // Save the image from the picture box to the chosen location
-                pictureBox.Image.Save(fs, System.Drawing.Imaging.ImageFormat.Png);
+                inputStream.CopyTo(outputStream);
 
-                // Close the file stream
-                fs.Close();
+                // Close the file streams
+                inputStream.Close();
+                outputStream.Close();
 
             }
             else
@@ -283,8 +289,42 @@ namespace DALLE_2_Frontend
         /**
          * Resets UI for new set of images, saves the image URLs, and loads the first image
          */
-        private void HandleImageUrls(List<ImageCreateResponse.ImageDataResult> imageDataResults)
+        private async void HandleImageUrls(List<ImageCreateResponse.ImageDataResult> imageDataResults)
         {
+
+            // Delete previous temporary files if necessary
+            if (imageFilePaths != null)
+            {
+                foreach (var url in imageFilePaths)
+                {
+                    File.Delete(url);
+                }
+            }
+
+            // Save image URLs to temporary files
+            imageFilePaths = new string[imageDataResults.Count];
+            var httpClient = new HttpClient();
+
+            for (int i = 0; i < imageDataResults.Count; i++)
+            {
+
+                // Query image from the web
+                var response = await httpClient.GetAsync(imageDataResults[i].Url);
+
+                // Generate temporary file path
+                var filePath = Path.Combine(Path.GetTempPath(), Guid.NewGuid().ToString());
+
+                // Open a file stream to temporary file path
+                var fileStream = new FileStream(filePath, FileMode.CreateNew);
+
+                // Copy from web to file path
+                await response.Content.CopyToAsync(fileStream);
+
+                // Close stream and save path to array
+                fileStream.Close();
+                imageFilePaths[i] = filePath;
+
+            }
 
             // Reset UI
             currentImageIndex = 0;
@@ -306,16 +346,8 @@ namespace DALLE_2_Frontend
                 nextButton.Visible = false;
             }
 
-            // Save image URLs
-            imageUrls = new string[imageDataResults.Count];
-
-            for (int i = 0; i < imageDataResults.Count; i++)
-            {
-                imageUrls[i] = imageDataResults[i].Url;
-            }
-
             // Load first image
-            pictureBox.Load(imageUrls[currentImageIndex]);
+            pictureBox.Load(imageFilePaths[currentImageIndex]);
 
         }
 
