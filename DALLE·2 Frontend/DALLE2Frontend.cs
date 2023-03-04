@@ -20,9 +20,12 @@ namespace DALLE_2_Frontend
         private string _apiKey = "NO_API_KEY";
         private UserSettings _settings;
 
+        // Generation progress form
+        private GenerationProgressForm _currentGenerationProgressForm;
+
         // Generated image file paths and position tracking
-        private string[] imageFilePaths;
-        private int currentImageIndex = 0;
+        private string[] _imageFilePaths;
+        private int _currentImageIndex = 0;
 
         // Price per image for each resolution (256x256, 
         // 512x512, and 1024x1024) in USD
@@ -101,11 +104,17 @@ namespace DALLE_2_Frontend
                 return;
             }
 
+            _currentGenerationProgressForm = new GenerationProgressForm((int) numOfPicturesField.Value);
+            _currentGenerationProgressForm.SetLabelText("Initializing API...");
+            _currentGenerationProgressForm.Show();
+
             // Initialize OpenAI API object
             var openAIService = new OpenAIService(new OpenAiOptions()
             {
                 ApiKey = _apiKey
             });
+
+            _currentGenerationProgressForm.IncrementProgress("Making image generation request...");
 
             // Make generation request with user input
             var imageResult = await openAIService.Image.CreateImage(new ImageCreateRequest()
@@ -118,16 +127,25 @@ namespace DALLE_2_Frontend
 
             if (imageResult.Successful)
             {
+
+                _currentGenerationProgressForm.IncrementProgress("Handling request response...");
+
                 // Image generated successfully, hand off images 
                 // to be displayed in the UI
                 HandleImageUrls(imageResult.Results);
+
             }
             else
             {
+
+                // Shutdown progress form
+                ShutdownGenerationProgressForm();
+
                 // Error while generating
                 MessageBox.Show(
                     "Error while generating:\n" + imageResult.Error.Message,
                     "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+
             }
 
         }
@@ -141,17 +159,17 @@ namespace DALLE_2_Frontend
         {
 
             // If this was the last image of the set, reveal the next button again
-            if (currentImageIndex == (imageFilePaths.Length - 1))
+            if (_currentImageIndex == (_imageFilePaths.Length - 1))
             {
                 nextButton.Visible = true;
             }
 
             // Show previous image
-            currentImageIndex--;
-            pictureBox.Load(imageFilePaths[currentImageIndex]);
+            _currentImageIndex--;
+            pictureBox.Load(_imageFilePaths[_currentImageIndex]);
 
             // If we are now on the first image of the set, hide the previous button.
-            if (currentImageIndex == 0)
+            if (_currentImageIndex == 0)
             {
                 prevButton.Visible = false;
             }
@@ -167,17 +185,17 @@ namespace DALLE_2_Frontend
         {
 
             // If this was the first image of the set, reveal the previous button again
-            if (currentImageIndex == 0)
+            if (_currentImageIndex == 0)
             {
                 prevButton.Visible = true;
             }
 
             // Show next image
-            currentImageIndex++;
-            pictureBox.Load(imageFilePaths[currentImageIndex]);
+            _currentImageIndex++;
+            pictureBox.Load(_imageFilePaths[_currentImageIndex]);
 
             // If we are now on the last image of the set, hide the next button.
-            if (currentImageIndex == (imageFilePaths.Length - 1))
+            if (_currentImageIndex == (_imageFilePaths.Length - 1))
             {
                 nextButton.Visible = false;
             }
@@ -204,17 +222,13 @@ namespace DALLE_2_Frontend
 
                 // If the user picked a file
 
-                // Open a FileStream from imageFilePaths
-                var inputStream = new FileStream(imageFilePaths[currentImageIndex], FileMode.Open);
-
                 // Open a FileStream to that location
                 var outputStream = (FileStream) saveFileDialog.OpenFile();
 
                 // Save the image from the picture box to the chosen location
-                inputStream.CopyTo(outputStream);
+                pictureBox.Image.Save(outputStream, System.Drawing.Imaging.ImageFormat.Png);
 
-                // Close the file streams
-                inputStream.Close();
+                // Close the file stream
                 outputStream.Close();
 
             }
@@ -292,17 +306,8 @@ namespace DALLE_2_Frontend
         private async void HandleImageUrls(List<ImageCreateResponse.ImageDataResult> imageDataResults)
         {
 
-            // Delete previous temporary files if necessary
-            if (imageFilePaths != null)
-            {
-                foreach (var url in imageFilePaths)
-                {
-                    File.Delete(url);
-                }
-            }
-
             // Save image URLs to temporary files
-            imageFilePaths = new string[imageDataResults.Count];
+            _imageFilePaths = new string[imageDataResults.Count];
             var httpClient = new HttpClient();
 
             for (int i = 0; i < imageDataResults.Count; i++)
@@ -322,12 +327,14 @@ namespace DALLE_2_Frontend
 
                 // Close stream and save path to array
                 fileStream.Close();
-                imageFilePaths[i] = filePath;
+                _imageFilePaths[i] = filePath;
+
+                _currentGenerationProgressForm.IncrementProgress(GenerationProgressForm.LabelBaseText + (i + 1) + "/" + imageDataResults.Count);
 
             }
 
             // Reset UI
-            currentImageIndex = 0;
+            _currentImageIndex = 0;
 
             // First image, so no previous
             prevButton.Visible = false;
@@ -346,9 +353,19 @@ namespace DALLE_2_Frontend
                 nextButton.Visible = false;
             }
 
-            // Load first image
-            pictureBox.Load(imageFilePaths[currentImageIndex]);
+            // Get rid of the progress form
+            _currentGenerationProgressForm.Close();
+            ShutdownGenerationProgressForm();
 
+            // Load first image
+            pictureBox.Load(_imageFilePaths[_currentImageIndex]);
+
+        }
+
+        private void ShutdownGenerationProgressForm()
+        {
+            _currentGenerationProgressForm.Close();
+            _currentGenerationProgressForm = null;
         }
 
     }
